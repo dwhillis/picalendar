@@ -1,0 +1,25 @@
+[Unit]
+Description=Raspberry Pi E-Ink Calendar Display
+After=network.target
+StartLimitIntervalSec=500
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/picalendar
+ExecStart=/usr/bin/python3 /home/pi/picalendar/main.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Permissions for GPIO and SPI access
+ProtectSystem=no
+ProtectHome=yes
+
+# Environment
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+[Install]
+WantedBy=multi-user.target

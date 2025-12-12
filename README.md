@@ -40,13 +40,49 @@ Open `index.html` in a web browser. You should see:
 - Current month calendar on the left
 - Your upcoming events on the right
 
-### 4. For E-Ink Display
+### 4. Raspberry Pi E-Ink Display (Optional)
 
-Once the web page is working, use your second component to:
-1. Load the page in a headless browser or webview
-2. Capture a screenshot at 800×480 resolution
-3. Convert to the appropriate e-ink display format
-4. Send to your e-ink display
+For automated display on a Waveshare 7.3" e-ink display connected to Raspberry Pi 5:
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run tests
+python3 test_render.py    # Test web rendering
+python3 test_display.py   # Test display hardware
+
+# Start the display service
+python3 main.py
+
+# Or install as systemd service (see SETUP.md)
+```
+
+See [SETUP.md](SETUP.md) for complete Raspberry Pi installation and configuration.
+
+## Architecture
+
+The system consists of three main components:
+
+1. **Web Calendar** (`index.html`, `calendar.js`, `style.css`)
+   - Browser-based calendar display
+   - Fetches events from Google Calendar
+   - Renders at 800×480 resolution
+
+2. **Web Renderer** (`web_renderer.py`)
+   - Runs local HTTP server
+   - Uses Playwright/Selenium to render webpage headlessly
+   - Converts to PNG with optional dithering for e-ink
+
+3. **Display Driver** (`display_driver.py`)
+   - Communicates with Waveshare display via SPI
+   - Controls GPIO pins (reset, data/command, busy)
+   - Handles image-to-display conversion
+
+4. **Main Orchestrator** (`main.py`)
+   - Manages update cycle
+   - Coordinates rendering and display updates
+   - Handles error recovery and logging
 
 ## Customization
 

@@ -1,20 +1,4 @@
-// Configuration - Replace with your Google Calendar public iCal URL
-const CALENDAR_CONFIG = {
-    // Format: https://calendar.google.com/calendar/ical/YOUR_CALENDAR_ID/public/basic.ics
-    calendarUrl: 'https://calendar.google.com/calendar/ical/family07866921202423959735%40group.calendar.google.com/private-1db2b054182d515d8be92313ea367a29/basic.ics',
-    // Use CORS proxy to fetch the calendar (since browsers block direct iCal requests)
-    corsProxy: 'https://corsproxy.io/?'
-};
-
-// Weather Configuration - Replace with your location coordinates
-const WEATHER_CONFIG = {
-    latitude: 43.4086299,
-    longitude: -80.5045712,
-    locationName: 'Kitchener, ON',
-    units: 'celsius'
-};
-
-const MAX_EVENTS = 8;
+// Load configuration from config.js
 
 // Initialize the calendar
 document.addEventListener('DOMContentLoaded', () => {
@@ -87,7 +71,7 @@ async function fetchAndDisplayEvents() {
             eventsList.innerHTML = `
                 <div class="error">
                     <p>Calendar not configured.</p>
-                    <p style="margin-top: 10px; font-size: 12px;">Please edit calendar.js and set your Google Calendar public iCal URL.</p>
+                    <p style="margin-top: 10px; font-size: 12px;">Please edit config.js and set your Google Calendar public iCal URL.</p>
                 </div>
             `;
             return;
@@ -108,24 +92,80 @@ async function fetchAndDisplayEvents() {
         const comp = new ICAL.Component(jcalData);
         const vevents = comp.getAllSubcomponents('vevent');
 
-        // Convert to event objects
-        const events = vevents.map(vevent => {
+        // Convert to event objects and expand recurring events
+        const now = new Date();
+        const endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + 3); // Look ahead 3 months for recurring events
+
+        const events = [];
+
+        vevents.forEach(vevent => {
             const event = new ICAL.Event(vevent);
-            return {
-                summary: event.summary,
-                location: event.location,
-                startDate: event.startDate.toJSDate(),
-                endDate: event.endDate.toJSDate(),
-                description: event.description
-            };
+
+            if (event.isRecurring()) {
+                // Expand recurring events
+                const dtstart = event.startDate.toJSDate();
+
+                // Create time range from start of current month to 3 months ahead
+                const rangeStart = new Date(now);
+                rangeStart.setDate(1); // Start of current month
+                rangeStart.setHours(0, 0, 0, 0);
+
+                try {
+                    const expand = event.iterator();
+                    let occurrence;
+                    let count = 0;
+                    const maxOccurrences = 100;
+
+                    // Get all occurrences
+                    while ((occurrence = expand.next()) && count < maxOccurrences) {
+                        const occurrenceDate = occurrence.toJSDate();
+
+                        // Skip occurrences before the current month
+                        if (occurrenceDate < rangeStart) {
+                            count++;
+                            continue;
+                        }
+
+                        // Stop if past our end date
+                        if (occurrenceDate > endDate) {
+                            break;
+                        }
+
+                        // Calculate end time
+                        const duration = event.duration.toSeconds() * 1000;
+                        const occurrenceEnd = new Date(occurrenceDate.getTime() + duration);
+
+                        events.push({
+                            summary: event.summary,
+                            location: event.location,
+                            startDate: occurrenceDate,
+                            endDate: occurrenceEnd,
+                            description: event.description
+                        });
+
+                        count++;
+                    }
+                } catch (error) {
+                    console.error('Error expanding recurring event:', event.summary, error);
+                }
+            } else {
+                // Non-recurring event
+                events.push({
+                    summary: event.summary,
+                    location: event.location,
+                    startDate: event.startDate.toJSDate(),
+                    endDate: event.endDate.toJSDate(),
+                    description: event.description
+                });
+            }
         });
 
         // Filter and sort events
-        const now = new Date();
         const upcomingEvents = events
             .filter(event => event.startDate >= now)
             .sort((a, b) => a.startDate - b.startDate)
-            .slice(0, MAX_EVENTS); 
+            .slice(0, MAX_EVENTS);
 
         // Highlight calendar days with events
         highlightEventDays(events);

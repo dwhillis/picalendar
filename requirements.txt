@@ -1,0 +1,13 @@
+# Web rendering
+playwright>=1.40.0
+selenium>=4.15.0
+
+# GPIO and SPI
+spidev>=3.6
+gpiozero>=2.0.0
+
+# Image processing
+Pillow>=10.0.0
+
+# Calendar data
+ical.js>=1.0  # Already included in HTML but keeping for reference
