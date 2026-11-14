@@ -11,10 +11,14 @@ import logging
 from pathlib import Path
 from datetime import datetime
 import traceback
+from croniter import croniter
 
 from display_driver import WaveshareDisplay
-from web_renderer import WebRenderer
+from direct_renderer import DirectRenderer
+from web_server import start_server
 import display_config as config
+import calendar_config
+import chore_wheel
 
 
 # Setup logging
@@ -63,23 +67,25 @@ class CalendarDisplayManager:
         logger.info("=" * 60)
         
         try:
-            # Initialize web renderer
-            self.renderer = WebRenderer(
-                web_root=config.WEB_ROOT,
-                port=config.HTTP_PORT,
-                timeout=config.RENDER_TIMEOUT
-            )
-            self.renderer.start_server()
+            # Initialize renderer
+            logger.info("Using direct buffer renderer")
+            self.renderer = DirectRenderer()
             
             # Initialize display (if enabled)
             if config.DISPLAY_ENABLED:
-                self.display = WaveshareDisplay(use_gpio=not config.DISPLAY_SIMULATE)
+                self.display = WaveshareDisplay(
+                    use_gpio=not config.DISPLAY_SIMULATE,
+                    flip_display=config.DISPLAY_FLIP
+                )
                 self.display.init()
                 
                 if config.CLEAR_ON_STARTUP:
                     logger.info("Clearing display on startup...")
                     self.display.clear()
             
+            # Start web management server
+            start_server(manager=self)
+
             logger.info("Initialization complete")
             return True
         
@@ -103,10 +109,7 @@ class CalendarDisplayManager:
             # Render with retries
             for attempt in range(config.MAX_RENDER_RETRIES):
                 try:
-                    if config.RENDER_OPTIMIZE:
-                        png_path = self.renderer.render_and_optimize(output_path)
-                    else:
-                        png_path = self.renderer.render_to_png(output_path)
+                    png_path = self.renderer.render_to_png(output_path)
                     
                     logger.info(f"Render successful: {png_path}")
                     self.last_render_path = png_path
@@ -162,6 +165,35 @@ class CalendarDisplayManager:
                             pass
                     return False
     
+    def _get_next_scheduled_time(self):
+        """Calculate the next scheduled update time from cron expressions"""
+        now = datetime.now()
+        next_times = []
+        
+        for cron_expr in config.UPDATE_SCHEDULE:
+            try:
+                cron = croniter(cron_expr, now)
+                next_times.append(cron.get_next(datetime))
+            except Exception as e:
+                logger.warning(f"Invalid cron expression '{cron_expr}': {e}")
+        
+        if not next_times:
+            logger.error("No valid cron schedules configured, defaulting to 1 hour")
+            return datetime.fromtimestamp(time.time() + 3600)
+        
+        return min(next_times)
+
+    def _get_next_chore_rotation_time(self):
+        """Calculate the next chore wheel rotation time"""
+        cron_expr = getattr(config, 'CHORE_WHEEL_SCHEDULE', None)
+        if not cron_expr:
+            return None
+        try:
+            return croniter(cron_expr, datetime.now()).get_next(datetime)
+        except Exception as e:
+            logger.warning(f"Invalid chore wheel cron expression '{cron_expr}': {e}")
+            return None
+    
     def run(self):
         """Main event loop"""
         if not self.initialize():
@@ -172,28 +204,49 @@ class CalendarDisplayManager:
         logger.info(f"Waiting {config.STARTUP_DELAY}s before first update...")
         time.sleep(config.STARTUP_DELAY)
         
+        # Perform initial update at startup
         try:
+            logger.info("Performing startup update...")
+            self.update_display()
+        except Exception as e:
+            logger.error(f"Startup update failed: {e}")
+            logger.error(traceback.format_exc())
+        
+        try:
+            next_chore_rotation = self._get_next_chore_rotation_time()
+            if next_chore_rotation:
+                logger.info(f"Next chore wheel rotation: {next_chore_rotation.strftime('%Y-%m-%d %H:%M:%S')}")
+
             while self.running:
-                current_time = time.time()
+                next_update = self._get_next_scheduled_time()
+                sleep_time = max((next_update - datetime.now()).total_seconds(), 1)
+
+                if next_chore_rotation:
+                    chore_sleep = max((next_chore_rotation - datetime.now()).total_seconds(), 1)
+                    sleep_time = min(sleep_time, chore_sleep)
+
+                logger.info(f"Next update scheduled for {next_update.strftime('%Y-%m-%d %H:%M:%S')} (in {sleep_time:.0f}s)")
                 
-                # Perform update
-                try:
-                    self.update_display()
-                except Exception as e:
-                    logger.error(f"Update cycle failed: {e}")
-                    logger.error(traceback.format_exc())
+                sleep_end = time.time() + sleep_time
+                while self.running and time.time() < sleep_end:
+                    time.sleep(min(1.0, sleep_end - time.time()))
                 
-                # Wait for next update
-                if self.running:
-                    sleep_time = max(config.UPDATE_INTERVAL - (time.time() - current_time), 1)
-                    next_update = datetime.fromtimestamp(time.time() + sleep_time)
-                    logger.info(f"Next update scheduled for {next_update.strftime('%Y-%m-%d %H:%M:%S')}")
-                    
-                    # Sleep with periodic checks for shutdown
-                    for _ in range(int(sleep_time * 10)):
-                        if not self.running:
-                            break
-                        time.sleep(0.1)
+                if not self.running:
+                    break
+
+                if next_chore_rotation and datetime.now() >= next_chore_rotation:
+                    logger.info("Rotating chore wheel (scheduled)")
+                    chore_wheel.rotate_forward()
+                    next_chore_rotation = self._get_next_chore_rotation_time()
+                    if next_chore_rotation:
+                        logger.info(f"Next chore wheel rotation: {next_chore_rotation.strftime('%Y-%m-%d %H:%M:%S')}")
+
+                if datetime.now() >= next_update:
+                    try:
+                        self.update_display()
+                    except Exception as e:
+                        logger.error(f"Update cycle failed: {e}")
+                        logger.error(traceback.format_exc())
         
         except KeyboardInterrupt:
             logger.info("Keyboard interrupt received")
@@ -213,7 +266,7 @@ class CalendarDisplayManager:
         logger.info("Shutting down...")
         
         try:
-            if self.renderer:
+            if self.renderer and hasattr(self.renderer, 'cleanup'):
                 self.renderer.cleanup()
             
             if self.display:

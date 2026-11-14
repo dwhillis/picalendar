@@ -11,8 +11,6 @@ sudo apt-get install -y python3-pip python3-venv libatlas-base-dev libjasper-dev
 # For Raspberry Pi GPIO support
 sudo apt-get install -y python3-gpiozero python3-rpi.gpio
 
-# For web browser rendering (Chromium)
-sudo apt-get install -y chromium-browser
 ```
 
 ### 2. Python Dependencies
@@ -22,9 +20,6 @@ cd /home/pi/picalendar
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-
-# Install Playwright browsers
-playwright install chromium
 ```
 
 ### 3. Configure Display Hardware
@@ -74,21 +69,6 @@ python3 main.py
 # In display_config.py, set:
 DISPLAY_ENABLED = True
 DISPLAY_SIMULATE = True
-```
-
-### Test Rendering Only
-
-```python
-from web_renderer import render_calendar_webpage
-from pathlib import Path
-
-# This will render the webpage to PNG without touching display hardware
-output = render_calendar_webpage(
-    web_root=Path.cwd(),
-    output_path='/tmp/test_render.png',
-    optimize=True
-)
-print(f"Rendered to: {output}")
 ```
 
 ### Test Display Driver
@@ -160,21 +140,10 @@ sudo usermod -a -G gpio pi
 # Relogin or reboot for group changes to take effect
 ```
 
-### Playwright/Chrome Issues
-```bash
-# Reinstall Playwright
-python3 -m pip install --upgrade --force-reinstall playwright
-playwright install chromium
-
-# Test Chrome directly
-chromium-browser --headless --screenshot
-```
-
 ### Display Not Updating
 1. Check logs: `sudo journalctl -u picalendar.service -f`
-2. Test rendering: `python3 -c "from web_renderer import render_calendar_webpage; print(render_calendar_webpage())"`
-3. Test display: Run test script above
-4. Check GPIO connections and power
+2. Test display: Run test script above
+3. Check GPIO connections and power
 
 ## Performance Notes
 
