@@ -12,6 +12,7 @@ LOG_FILE = '/var/log/picalendar.log'
 # Display settings
 DISPLAY_ENABLED = True  # Set to False for testing without display hardware
 DISPLAY_SIMULATE = False  # Set to True to simulate display without GPIO
+DISPLAY_FLIP = True # Set to True to rotate display 180 degrees
 
 # Display hardware configuration
 DISPLAY_WIDTH = 800
@@ -24,16 +25,15 @@ SPI_BUS = 0
 SPI_DEVICE = 0
 SPI_SPEED = 4000000  # 4 MHz
 
-# Web renderer settings
-WEB_ROOT = Path(__file__).parent  # Directory containing index.html
-HTTP_PORT = 8000
-RENDER_TIMEOUT = 30  # seconds
-RENDER_OPTIMIZE = True  # Apply dithering for e-ink
+UPDATE_SCHEDULE = [
+    "0 6 * * *",   # 6:00 AM
+    "0 11 * * *",  # 12:00 PM
+    "30 16 * * *",  # 6:00 PM
+]
 
-# Update schedule
-UPDATE_INTERVAL = 1800  # Seconds (30 minutes)
-STARTUP_DELAY = 5  # Seconds before first update
-FORCE_FULL_REFRESH = 3600  # Full refresh every hour (seconds)
+# Chore wheel auto-rotation schedule (cron expression)
+CHORE_WHEEL_SCHEDULE = "0 0 * * 1"  # Midnight every Monday
+STARTUP_DELAY = 1  # Seconds before first update
 
 # Retry configuration
 MAX_RENDER_RETRIES = 3
@@ -41,7 +41,7 @@ MAX_DISPLAY_RETRIES = 3
 RETRY_DELAY = 5  # Seconds between retries
 
 # Behavior settings
-CLEAR_ON_STARTUP = True  # Clear display on startup
+CLEAR_ON_STARTUP = False # Clear display on startup
 CLEAR_ON_ERROR = True  # Clear display if error occurs
 POWER_OFF_ON_SHUTDOWN = True  # Power off display on shutdown
 
@@ -49,5 +49,5 @@ POWER_OFF_ON_SHUTDOWN = True  # Power off display on shutdown
 TIMEZONE = 'UTC'
 
 # Debug settings
-DEBUG_SAVE_RENDERS = False  # Save all rendered PNG files
+DEBUG_SAVE_RENDERS = True  # Save all rendered PNG files
 DEBUG_RENDER_PATH = '/tmp/picalendar_renders'  # Where to save debug renders

@@ -1,2 +1,16 @@
-config.js
 .*.swp
+__pycache__
+renders
+waveshare_epd/
+chore_wheel_data.json
+# Local secrets - copy calendar_config.example.py to calendar_config.py
+calendar_config.py
+# Network fallback caches
+/tmp/
+picalendar_cache*.json
+picalendar_cache*.ics
+# Local render previews
+test_output/
+.pytest_cache/
+
+tests/output/

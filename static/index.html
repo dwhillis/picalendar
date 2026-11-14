@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PiCalendar</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; background: #f5f5f5; }
+  h1 { margin-bottom: .25rem; }
+  .toolbar { margin: 1rem 0; display: flex; gap: .5rem; align-items: center; }
+  button { padding: .5rem 1rem; font-size: 1rem; cursor: pointer; border: 1px solid #888; border-radius: 4px; background: #fff; }
+  button:hover { background: #e0e0e0; }
+  button:disabled { opacity: .5; cursor: wait; }
+  #msg { margin-left: .5rem; font-size: .9rem; }
+  img { max-width: 100%; border: 1px solid #ccc; background: #fff; }
+  #status { font-size: .85rem; color: #555; margin-bottom: .5rem; }
+</style>
+</head>
+<body>
+<h1>PiCalendar</h1>
+<div id="status">Loading status&hellip;</div>
+<div class="toolbar">
+  <button id="render-btn" onclick="doRenderOnly()">Render Preview Only</button>
+  <button id="refresh-btn" onclick="doRefresh()">Refresh Display</button>
+  <span id="msg"></span>
+</div>
+<h2>Chore Wheel</h2>
+<div class="toolbar">
+  <button onclick="choreRotate('back')">&#x25C0; Rotate Back</button>
+  <button onclick="choreRotate('forward')">Rotate Forward &#x25B6;</button>
+  <span id="chore-msg"></span>
+</div>
+<img id="render" src="/render" alt="Latest render">
+<script>
+async function loadStatus() {
+  try {
+    const r = await fetch('/status');
+    const s = await r.json();
+    document.getElementById('status').textContent =
+      'Last render: ' + (s.last_render_time || 'never');
+  } catch(e) {
+    document.getElementById('status').textContent = 'Status unavailable';
+  }
+}
+async function doRefresh() {
+  await runRenderAction({
+    buttonId: 'refresh-btn',
+    endpoint: '/refresh',
+    workingMessage: 'Refreshing…',
+    successMessage: 'Display updated'
+  });
+}
+async function doRenderOnly() {
+  await runRenderAction({
+    buttonId: 'render-btn',
+    endpoint: '/render-only',
+    workingMessage: 'Rendering…',
+    successMessage: 'Preview updated'
+  });
+}
+async function runRenderAction({buttonId, endpoint, workingMessage, successMessage}) {
+  const btn = document.getElementById(buttonId);
+  const otherBtn = document.getElementById(buttonId === 'refresh-btn' ? 'render-btn' : 'refresh-btn');
+  const msg = document.getElementById('msg');
+  btn.disabled = true;
+  otherBtn.disabled = true;
+  msg.textContent = workingMessage;
+  try {
+    const r = await fetch(endpoint, {method:'POST'});
+    const j = await readJsonResponse(r);
+    if (j.ok) {
+      msg.textContent = successMessage;
+      document.getElementById('render').src = '/render?' + Date.now();
+      loadStatus();
+    } else {
+      msg.textContent = 'Failed: ' + (j.error || 'unknown error');
+    }
+  } catch(e) {
+    msg.textContent = 'Error: ' + e;
+  }
+  btn.disabled = false;
+  otherBtn.disabled = false;
+}
+async function readJsonResponse(response) {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return await response.json();
+  }
+
+  const text = await response.text();
+  const statusText = response.status ? ('HTTP ' + response.status + ' ' + response.statusText) : 'Unexpected response';
+  const detail = text.startsWith('<!DOCTYPE') ? statusText : text;
+  throw new Error(detail);
+}
+function showAssignments(assignments) {
+  const parts = Object.entries(assignments).map(([cat, name]) => cat + ': ' + name);
+  document.getElementById('chore-msg').textContent = parts.join('  |  ');
+}
+async function choreRotate(direction) {
+  const msg = document.getElementById('chore-msg');
+  msg.textContent = 'Rotating…';
+  try {
+    const r = await fetch('/chore-wheel/rotate-' + direction, {method:'POST'});
+    const j = await r.json();
+    if (j.ok) {
+      showAssignments(j.assignments);
+    } else {
+      msg.textContent = 'Failed';
+    }
+  } catch(e) {
+    msg.textContent = 'Error: ' + e;
+  }
+}
+loadStatus();
+async function loadChoreStatus() {
+  try {
+    const r = await fetch('/chore-wheel/status');
+    const j = await r.json();
+    showAssignments(j.assignments);
+  } catch(e) {}
+}
+loadChoreStatus();
+</script>
+</body>
+</html>

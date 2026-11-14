@@ -7,19 +7,23 @@ StartLimitBurst=5
 [Service]
 Type=simple
 User=pi
+Group=pi
+SupplementaryGroups=gpio spi i2c
 WorkingDirectory=/home/pi/picalendar
-ExecStart=/usr/bin/python3 /home/pi/picalendar/main.py
-Restart=on-failure
+ExecStart=/bin/bash -c 'source /home/pi/picalendar/venv/bin/activate && python /home/pi/picalendar/main.py'
+Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
 # Permissions for GPIO and SPI access
 ProtectSystem=no
-ProtectHome=yes
+ProtectHome=no
 
 # Environment
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="GPIOZERO_PIN_FACTORY=lgpio"
+Environment="PYTHONPATH=/usr/lib/python3/dist-packages"
 
 [Install]
 WantedBy=multi-user.target
