@@ -79,11 +79,11 @@ class DirectRenderer:
         for font_path in font_paths:
             if Path(font_path).exists():
                 try:
-                    self.font_large = ImageFont.truetype(font_path, 30)
-                    self.font_medium = ImageFont.truetype(font_path, 18)
-                    self.font_small = ImageFont.truetype(font_path, 14)
+                    self.font_large = ImageFont.truetype(font_path, 32)
+                    self.font_medium = ImageFont.truetype(font_path, 22)
+                    self.font_small = ImageFont.truetype(font_path, 15)
                     self.font_tiny = ImageFont.truetype(font_path, 12)
-                    self.font_chore = ImageFont.truetype(font_path, 18)
+                    self.font_chore = ImageFont.truetype(font_path, 23)
                     loaded_font_path = font_path
                     logger.info(f"Loaded font: {font_path}")
                     break
@@ -116,9 +116,9 @@ class DirectRenderer:
             self.font_icon = self.font_large
 
         event_font_scale = self._get_event_font_scale()
-        self.event_row_padding = max(3, int(round(4 * event_font_scale)))
-        self.event_row_spacing = max(4, int(round(6 * event_font_scale)))
-        self.event_header_spacing = max(2, int(round(4 * event_font_scale)))
+        self.event_row_padding = 6
+        self.event_row_spacing = 12
+        self.event_header_spacing = 6
         self.font_event_header = self.font_tiny
         self.font_event_time = self.font_tiny
         self.font_event_title = self.font_small
@@ -127,15 +127,15 @@ class DirectRenderer:
             try:
                 self.font_event_header = ImageFont.truetype(
                     loaded_font_path,
-                    max(14, int(round(13 * event_font_scale)))
+                    20
                 )
                 self.font_event_time = ImageFont.truetype(
                     loaded_font_path,
-                    max(14, int(round(13 * event_font_scale)))
+                    20
                 )
                 self.font_event_title = ImageFont.truetype(
                     loaded_font_path,
-                    max(18, int(round(16 * event_font_scale)))
+                    24
                 )
             except Exception as e:
                 logger.warning(f"Failed to load scaled event fonts: {e}")
@@ -222,11 +222,14 @@ class DirectRenderer:
     def _draw_calendar_grid(self, draw: ImageDraw.Draw, now: datetime,
                             event_days: Set[int], next_month_event_days: Set[int]) -> int:
         """Draw the monthly calendar grid. Returns bottom y of grid."""
-        # Grid position - cell_height 34 fits 6 rows (204px) without hitting chore wheel
+        # Grid position - dynamic height: 40px for <=5 rows, 34px for 6 rows (Option A)
+        import math as _math_grid
         grid_x = 15
         grid_y = 50
         cell_width = 47
-        cell_height = 34
+        _fw0 = (calendar.monthrange(now.year, now.month)[0] + 1) % 7
+        _rows0 = _math_grid.ceil((_fw0 + calendar.monthrange(now.year, now.month)[1]) / 7)
+        cell_height = 40 if _rows0 <= 5 else 34
 
         # Day headers
         day_headers = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -418,16 +421,25 @@ class DirectRenderer:
                           self.font_tiny)
 
     def _draw_chore_wheel(self, draw: ImageDraw.Draw, grid_bottom: int = 0):
-        """Draw the chore wheel below the calendar grid (dynamic y)."""
+        """Draw the chore wheel centered between grid and weather (Option A)."""
         panel_x = 15
         panel_width = self.LEFT_PANEL_WIDTH - 30
+        WEATHER_TOP = 370
+        # Center actual ink: clapper tip ~3px above panel_y,
+        # names end ~62px below panel_y (23pt chore font)
+        INK_TOP = -3
+        INK_BOTTOM = 62
+        INK_H = INK_BOTTOM - INK_TOP
 
-        # Flow below grid with margin; never overlap grid, never hit weather (370)
-        chore_top = max(grid_bottom + 8 if grid_bottom else 286, 240)
-        # Reserve ~60px for icons+names; clamp so bottom stays above weather border
-        if chore_top + 60 > 360:
-            chore_top = 360 - 60
-        panel_y = chore_top
+        gap_top = grid_bottom or 275
+        gap = WEATHER_TOP - gap_top
+        # Center the ink in the gap, not an estimated box
+        panel_y = gap_top + max(8, (gap - INK_H) // 2) - INK_TOP
+        if panel_y < 240:
+            panel_y = 240
+        if panel_y + INK_BOTTOM > WEATHER_TOP - 8:
+            panel_y = WEATHER_TOP - 8 - INK_BOTTOM
+        chore_top = panel_y
 
         names = chore_wheel.get_names()
         rotation = chore_wheel.get_rotation()
@@ -464,14 +476,14 @@ class DirectRenderer:
 
             # Draw name centered below icon
             text_width = bbox[2] - bbox[0]
-            self._text_lt(draw, (col_x - text_width // 2, panel_y + 42), name,
+            self._text_lt(draw, (col_x - text_width // 2, panel_y + 48), name,
                           self.font_chore)
 
     def _draw_movie_icon(self, draw: ImageDraw.Draw, cx: int, cy: int):
-        """Draw an open clapperboard icon"""
-        w, h = 26, 18
+        """Draw an open clapperboard icon (Option A: 1.3x)"""
+        w, h = 34, 23
         # Main board body
-        board_top = cy - h//2 + 7
+        board_top = cy - h//2 + 9
         draw.rectangle([(cx - w//2, board_top), (cx + w//2, cy + h//2 + 5)],
                        outline=self.BLACK, fill=self.WHITE, width=2)
         # Open clapper (angled up from hinge point at top-left of board)
@@ -498,14 +510,14 @@ class DirectRenderer:
     def _draw_food_icon(self, draw: ImageDraw.Draw, cx: int, cy: int):
         """Draw a fork/knife icon"""
         # Fork (left)
-        draw.line([(cx - 4, cy - 13), (cx - 4, cy - 5)], fill=self.BLACK, width=2)
-        draw.line([(cx - 7, cy - 13), (cx - 7, cy - 5)], fill=self.BLACK, width=2)
-        draw.line([(cx - 10, cy - 13), (cx - 10, cy - 5)], fill=self.BLACK, width=2)
+        draw.line([(cx - 5, cy - 17), (cx - 5, cy - 6)], fill=self.BLACK, width=2)
+        draw.line([(cx - 9, cy - 17), (cx - 9, cy - 6)], fill=self.BLACK, width=2)
+        draw.line([(cx - 13, cy - 17), (cx - 13, cy - 6)], fill=self.BLACK, width=2)
 
-        draw.line([(cx - 7, cy - 5), (cx - 7, cy + 13)], fill=self.BLACK, width=2)
+        draw.line([(cx - 9, cy - 6), (cx - 9, cy + 17)], fill=self.BLACK, width=2)
 
         # Knife (right)
-        draw.line([(cx + 8, cy - 13), (cx + 8, cy + 13)], fill=self.BLACK, width=2)
+        draw.line([(cx + 10, cy - 17), (cx + 10, cy + 17)], fill=self.BLACK, width=2)
         draw.polygon([
             (cx + 5, cy - 13),
             (cx + 8, cy - 13),
@@ -515,8 +527,8 @@ class DirectRenderer:
 
     def _draw_games_icon(self, draw: ImageDraw.Draw, cx: int, cy: int):
         """Draw a dice/game icon"""
-        # Dice outline
-        size = 22
+        # Dice outline (Option A: 1.3x)
+        size = 28
         draw.rectangle([(cx - size//2, cy - size//2), (cx + size//2, cy + size//2)],
                        outline=self.BLACK, width=2)
         # Dots (showing 3)
