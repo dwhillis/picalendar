@@ -94,38 +94,47 @@ class CalendarDisplayManager:
             logger.error(traceback.format_exc())
             return False
     
-    def render_calendar(self):
-        """Render calendar to PNG"""
+    def _render_image(self):
+        """Render calendar to a PIL Image (and optionally save latest preview PNG)."""
         logger.info("Rendering calendar...")
-        
-        try:
-            # Create output path
-            output_path = None
-            if config.DEBUG_SAVE_RENDERS:
-                Path(config.DEBUG_RENDER_PATH).mkdir(parents=True, exist_ok=True)
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                output_path = f"{config.DEBUG_RENDER_PATH}/calendar_{timestamp}.png"
-            
-            # Render with retries
-            for attempt in range(config.MAX_RENDER_RETRIES):
-                try:
-                    png_path = self.renderer.render_to_png(output_path)
-                    
-                    logger.info(f"Render successful: {png_path}")
-                    self.last_render_path = png_path
-                    return png_path
-                
-                except Exception as e:
-                    if attempt < config.MAX_RENDER_RETRIES - 1:
-                        logger.warning(f"Render attempt {attempt + 1} failed: {e}")
-                        time.sleep(config.RETRY_DELAY)
-                    else:
-                        raise
-        
-        except Exception as e:
-            logger.error(f"Failed to render calendar: {e}")
-            logger.error(traceback.format_exc())
+
+        for attempt in range(config.MAX_RENDER_RETRIES):
+            try:
+                img = self.renderer.render()
+
+                if config.DEBUG_SAVE_RENDERS:
+                    render_dir = Path(config.DEBUG_RENDER_PATH)
+                    render_dir.mkdir(parents=True, exist_ok=True)
+                    output_path = render_dir / "calendar_latest.png"
+                    img.save(output_path, "PNG")
+                    self.last_render_path = str(output_path)
+                    logger.info(f"Render saved: {output_path}")
+
+                return img
+
+            except Exception as e:
+                if attempt < config.MAX_RENDER_RETRIES - 1:
+                    logger.warning(f"Render attempt {attempt + 1} failed: {e}")
+                    time.sleep(config.RETRY_DELAY)
+                else:
+                    logger.error(f"Failed to render calendar: {e}")
+                    logger.error(traceback.format_exc())
+                    return None
+
+    def render_calendar(self):
+        """Render calendar to PNG and return its path."""
+        img = self._render_image()
+        if img is None:
             return None
+
+        if not self.last_render_path:
+            render_dir = Path(config.DEBUG_RENDER_PATH)
+            render_dir.mkdir(parents=True, exist_ok=True)
+            output_path = render_dir / "calendar_latest.png"
+            img.save(output_path, "PNG")
+            self.last_render_path = str(output_path)
+
+        return self.last_render_path
     
     def update_display(self):
         """Render and update display"""
@@ -133,8 +142,8 @@ class CalendarDisplayManager:
             logger.info("Display disabled, skipping update")
             return True
         
-        png_path = self.render_calendar()
-        if not png_path:
+        img = self._render_image()
+        if img is None:
             logger.error("Render failed, not updating display")
             if config.CLEAR_ON_ERROR and self.display:
                 try:
@@ -143,11 +152,11 @@ class CalendarDisplayManager:
                     logger.error(f"Failed to clear display: {e}")
             return False
         
-        # Display image with retries
+        # Display image directly from memory buffer with retries
         for attempt in range(config.MAX_DISPLAY_RETRIES):
             try:
                 logger.info(f"Updating display (attempt {attempt + 1}/{config.MAX_DISPLAY_RETRIES})...")
-                self.display.display_image(png_path)
+                self.display.display_pil_image(img)
                 logger.info("Display update successful")
                 self.last_update_time = time.time()
                 return True

@@ -182,7 +182,8 @@ class DirectRenderer:
             width=self.BORDER_WIDTH
         )
 
-        return img
+        # Convert to 1-bit thresholds for crisp e-ink display
+        return img.point(lambda p: 255 if p > 128 else 0)
 
     def _get_event_days(self, events: List[CalendarEvent], year: int, month: int) -> Set[int]:
         """Get set of days in month that have events"""
@@ -759,10 +760,6 @@ class DirectRenderer:
             os.close(fd)
 
         img = self.render()
-
-        # Convert to 1-bit for crisp e-ink display
-        img = img.point(lambda p: 255 if p > 128 else 0)
-
         img.save(output_path, 'PNG')
         logger.info(f"Rendered to {output_path}")
 

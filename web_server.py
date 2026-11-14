@@ -50,8 +50,7 @@ def _render_preview(manager=None):
     from direct_renderer import render_calendar_direct
 
     Path(config.DEBUG_RENDER_PATH).mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_path = Path(config.DEBUG_RENDER_PATH) / f"calendar_{timestamp}.png"
+    output_path = Path(config.DEBUG_RENDER_PATH) / "calendar_latest.png"
     return render_calendar_direct(str(output_path))
 
 

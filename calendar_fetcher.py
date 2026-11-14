@@ -50,6 +50,7 @@ class CalendarFetcher:
         self.calendar_url = calendar_url
         self.timeout = timeout
         self._last_used_cache = False
+        self._last_ical_data = None
         if self.CACHE_PATH is None:
             self.cache_path = _Path("/tmp/picalendar_cache_calendar.ics")
         else:
@@ -90,6 +91,7 @@ class CalendarFetcher:
             response.raise_for_status()
 
             ical_data = response.text
+            self._last_ical_data = ical_data
             self._save_cache(ical_data)
             self._last_used_cache = False
             return self._parse_ical(ical_data, max_events, days_ahead)
@@ -99,12 +101,14 @@ class CalendarFetcher:
             cached = self._load_cache()
             if cached:
                 logger.info("Using cached calendar data")
+                self._last_ical_data = cached
                 self._last_used_cache = True
                 try:
                     return self._parse_ical(cached, max_events, days_ahead)
                 except Exception as parse_e:
                     logger.error(f"Error parsing cached calendar: {parse_e}")
                     return []
+            self._last_ical_data = None
             return []
         except Exception as e:
             logger.error(f"Error parsing calendar: {e}")
@@ -266,22 +270,31 @@ class CalendarFetcher:
         
         return events
     
-    def get_event_dates_for_month(self, year: int, month: int) -> set:
+    def get_event_dates_for_month(self, year: int, month: int, use_last_fetch: bool = True) -> set:
         """Get set of days in a month that have events (including past events)
 
-        Falls back to cache on network failure.
+        Reuses in-memory iCal data from the most recent fetch when available,
+        and falls back to network or disk cache otherwise.
 
         Args:
             year: Year
             month: Month (1-12)
+            use_last_fetch: If True, reuse _last_ical_data if already fetched
 
         Returns:
             Set of day numbers that have events
         """
+        if use_last_fetch and self._last_ical_data:
+            try:
+                return self._event_dates_from_ical(self._last_ical_data, year, month)
+            except Exception as e:
+                logger.error(f"Error parsing cached in-memory iCal for event dates: {e}")
+
         try:
             response = requests.get(self.calendar_url, timeout=self.timeout)
             response.raise_for_status()
             ical_data = response.text
+            self._last_ical_data = ical_data
             self._save_cache(ical_data)
 
             return self._event_dates_from_ical(ical_data, year, month)
@@ -291,6 +304,7 @@ class CalendarFetcher:
             cached = self._load_cache()
             if cached:
                 try:
+                    self._last_ical_data = cached
                     return self._event_dates_from_ical(cached, year, month)
                 except Exception:
                     pass

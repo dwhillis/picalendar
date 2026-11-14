@@ -65,11 +65,48 @@ class WaveshareDisplay:
         try:
             logger.info("Initializing display...")
             self.epd.init()
+            # Set PLL frame rate to Fast mode (0x07) for ~2x faster B&W refresh
+            self.epd.send_command(0x30)
+            self.epd.send_data(0x07)
             logger.info("Display initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize display: {e}")
             raise
     
+    def _pack_bw_buffer(self, img: Image.Image) -> bytes:
+        """Fast 1-bit B&W to 4-bit-per-pixel packed buffer for Waveshare 7.3" EPD.
+
+        Avoids RGB conversion, 7-color palette quantization, and slow Python loops.
+        Maps pixel > 128 to White (0x1) and <= 128 to Black (0x0), packed 2 pixels/byte.
+        """
+        if img.mode != 'L':
+            img = img.convert('L')
+
+        # Threshold to 0 (black) and 1 (white) using NumPy
+        arr = (np.asarray(img, dtype=np.uint8) > 128).astype(np.uint8)
+        flat = arr.ravel()
+        packed = (flat[0::2] << 4) | flat[1::2]
+        return packed.tobytes()
+
+    def _prepare_image(self, img: Image.Image) -> Image.Image:
+        """Normalize dimensions and orientation for the display."""
+        if img.mode not in ('L', '1'):
+            img = img.convert('L')
+
+        if self.flip_display:
+            img = img.rotate(180)
+
+        if img.size != (self.WIDTH, self.HEIGHT):
+            if img.size == (self.HEIGHT, self.WIDTH):
+                img = img.rotate(90, expand=True)
+            else:
+                logger.warning(f"Resizing image from {img.size} to {self.WIDTH}x{self.HEIGHT}")
+                img_np = np.array(img.convert('L'))
+                img_resized = cv2.resize(img_np, (self.WIDTH, self.HEIGHT), interpolation=cv2.INTER_AREA)
+                img = Image.fromarray(img_resized, mode='L')
+
+        return img
+
     def display_image(self, image_path):
         """Display image on e-ink display
         
@@ -81,39 +118,8 @@ class WaveshareDisplay:
             return
         
         try:
-            # Load and validate image
-            img = Image.open(image_path)
-            
-            # Ensure RGB for proper color quantization
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
-            
-            # Flip image 180 degrees if enabled
-            if self.flip_display:
-                img = img.rotate(180)
-            
-            if img.size != (self.WIDTH, self.HEIGHT):
-                logger.warning(f"Resizing image from {img.size} to {self.WIDTH}x{self.HEIGHT}")
-                # Convert PIL Image to numpy array for OpenCV
-                img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-                # Use cubic interpolation for high-quality downscaling
-                img_cv = cv2.resize(img_cv, (self.WIDTH, self.HEIGHT), interpolation=cv2.INTER_AREA)
-                # Convert back to PIL Image
-                img = Image.fromarray(cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB))
-            
-            # Save copy for debugging
-            debug_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'renders')
-            os.makedirs(debug_dir, exist_ok=True)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            debug_path = os.path.join(debug_dir, f'display_debug_{timestamp}.png')
-            img.save(debug_path)
-            logger.debug(f"Debug image saved: {debug_path}")
-            
-            # Get buffer from epd library's getbuffer method
-            buf = self.epd.getbuffer(img)
-            
-            # Display the buffer
-            self.epd.display(buf)
+            with Image.open(image_path) as img:
+                self.display_pil_image(img)
             logger.info(f"Image displayed: {image_path}")
             
         except Exception as e:
@@ -131,27 +137,8 @@ class WaveshareDisplay:
             return
         
         try:
-            # Ensure RGB for proper color quantization
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
-            
-            # Flip image 180 degrees if enabled
-            if self.flip_display:
-                img = img.rotate(180)
-            
-            if img.size != (self.WIDTH, self.HEIGHT):
-                logger.warning(f"Resizing image from {img.size} to {self.WIDTH}x{self.HEIGHT}")
-                # Convert PIL Image to numpy array for OpenCV
-                img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-                # Use cubic interpolation for high-quality downscaling
-                img_cv = cv2.resize(img_cv, (self.WIDTH, self.HEIGHT), interpolation=cv2.INTER_CUBIC)
-                # Convert back to PIL Image
-                img = Image.fromarray(cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB))
-            
-            # Get buffer from epd library's getbuffer method
-            buf = self.epd.getbuffer(img)
-            
-            # Display the buffer
+            img = self._prepare_image(img)
+            buf = self._pack_bw_buffer(img)
             self.epd.display(buf)
             logger.info("Image displayed")
             
@@ -178,7 +165,8 @@ class WaveshareDisplay:
             return
         
         try:
-            self.epd.Clear()
+            white_buf = b'\x11' * (self.WIDTH * self.HEIGHT // 2)
+            self.epd.display(white_buf)
             logger.info("Display cleared")
         except Exception as e:
             logger.error(f"Failed to clear display: {e}")

@@ -12,5 +12,6 @@ picalendar_cache*.ics
 # Local render previews
 test_output/
 .pytest_cache/
+venv/
 
 tests/output/
